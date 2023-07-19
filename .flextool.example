@@ -1,0 +1,8 @@
+PCAPFILE = test.pcap
+INTERFACE = eth0
+BROADCAST = true
+DEBUG = true
+OPNSENSE_USERNAME = ""
+OPNSENSE_PASSWORD = ""
+OPNSENSE_API_URL = "https://HOSTNAME/api/openvpn/service/searchRoutes"
+DELETE = true

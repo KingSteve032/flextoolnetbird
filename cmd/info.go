@@ -14,11 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// listAllNetworkInterfaces lists all network interfaces
+// listAllNetworkInterfaces prints a list of all network interfaces on the system
 func listAllNetworkInterfaces() {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		fmt.Print("Error accessing network intefaces: ", err.Error())
+		fmt.Println("Error accessing network intefaces: ", err.Error())
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.TabIndent)
 	fmt.Fprintln(w, "Interface Id\tInterface Name\tHardware Address\tIP Addresses")
@@ -55,6 +55,7 @@ TODO put info cmd examples in this usage statement`,
 			listAllNetworkInterfaces()
 		} else if get_flag {
 			ifname, _ := cmd.Flags().GetString("interface")
+			fmt.Println(ifname)
 			utils.GetNetworkInterfaceByName(ifname)
 		} else {
 			fmt.Println("Invalid command arguments")

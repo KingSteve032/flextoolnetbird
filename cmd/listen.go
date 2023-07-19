@@ -5,8 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"net"
-	"strings"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -15,13 +13,14 @@ import (
 	"github.com/littleairmada/vrt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 func ValidateListenConfigOptions(mode string, all_flags *pflag.FlagSet) (co utils.ConfigOptions, err error) {
 	// TODO: if settings is empty, return empty ConfigOptions and error
 	flag_broadcast := all_flags.Lookup("broadcast").Value.String()
 	flag_debug := all_flags.Lookup("debug").Value.String()
-	flag_clients := all_flags.Lookup("clients").Value.String()
+	//flag_clients := all_flags.Lookup("clients").Value.String()
 	flag_bpffilter := all_flags.Lookup("filter").Value.String()
 
 	co = utils.ConfigOptions{}
@@ -70,17 +69,70 @@ func ValidateListenConfigOptions(mode string, all_flags *pflag.FlagSet) (co util
 
 	// validate Clients
 	// TODO: fix error handling
-	if co.EnableBroadcast {
-		var validClients []net.IP
-		allClients := strings.Split(flag_clients, ",")
-		for _, c := range allClients {
-			cIp := net.ParseIP(string(c))
-			validClients = append(validClients, cIp)
-		}
-		co.Clients = validClients
-	}
+	// if co.EnableBroadcast {
+	// 	var validClients []net.IP
+	// 	allClients := strings.Split(flag_clients, ",")
+	// 	for _, c := range allClients {
+	// 		cIp := net.ParseIP(string(c))
+	// 		validClients = append(validClients, cIp)
+	// 	}
+	// 	co.Clients = validClients
+	// }
 
 	// Return ConfigOptions and no error
+	return co, nil
+}
+
+func ViperValidateListenConfigOptions(mode string, c *viper.Viper) (co utils.ConfigOptions, err error) {
+	// TODO: if settings is empty, return empty ConfigOptions and error
+	flag_broadcast := c.GetBool("broadcast")
+	flag_debug := c.GetBool("debug")
+	flag_bpffilter := c.GetString("filter")
+	flag_interface := c.GetString("interface")
+
+	co = utils.ConfigOptions{}
+	// validate MODE
+	switch mode {
+	case "info":
+		co.Mode = "info"
+	case "pcap":
+		co.Mode = "pcap"
+	case "listen":
+		co.Mode = "listen"
+	default:
+		err := fmt.Errorf("the requested mode \"%s\" is not a valid mode", mode)
+		return utils.ConfigOptions{}, err
+	}
+
+	// validate EnableBroadcast
+	switch flag_broadcast {
+	case true:
+		co.EnableBroadcast = true
+	default:
+		co.EnableBroadcast = false
+	}
+
+	// validate EnableDebug
+	switch flag_debug {
+	case true:
+		co.EnableDebug = true
+	default:
+		co.EnableDebug = false
+	}
+
+	// validate NetworkInteface
+	tempNetworkInterface, err := utils.ValidateNetworkInterfaceByName(flag_interface)
+	if err != nil {
+		return co, err
+	}
+	co.NetworkInteface = tempNetworkInterface
+
+	if flag_bpffilter != "" {
+		co.BPFFilter = flag_bpffilter
+	} else {
+		co.BPFFilter = "udp and port 4992 and dst host 255.255.255.255"
+	}
+
 	return co, nil
 }
 
@@ -90,7 +142,7 @@ func ListenForPackets(co utils.ConfigOptions) error {
 	} else if err := handle.SetBPFFilter(co.BPFFilter); err != nil { // optional
 		panic(err)
 	} else {
-		fmt.Printf("Listening for Discovery Packets on %s\n", co.NetworkInteface.Name)
+		// fmt.Printf("Listening for Discovery Packets on %s\n", co.NetworkInteface.Name)
 		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 		for packet := range packetSource.Packets() {
 			udpLayer := packet.Layer(layers.LayerTypeUDP)
@@ -106,10 +158,10 @@ func ListenForPackets(co utils.ConfigOptions) error {
 						if co.EnableDebug {
 							utils.PrintVrtPacket(vrtStruct)
 						}
-						fmt.Println("FlexRadio Discovery Packet detected")
+						//fmt.Println("FlexRadio Discovery Packet detected")
 						utils.MaybeSendDiscoveryPacket(co, vrtStruct)
 					}
-					fmt.Println("========================")
+					//fmt.Println("========================")
 				}
 			}
 			//fmt.Println("udpLayer LayerPayload: ", hex.EncodeToString(udpLayer.LayerPayload()))
@@ -129,17 +181,19 @@ of client IP addresses. For example:
 
 flextool listen -i eth0 -b -c 192.168.1.100
 `,
-	PreRun: func(cmd *cobra.Command, args []string) {
-		broadcast_flag, _ := cmd.Flags().GetBool("broadcast")
-		if broadcast_flag {
-			cmd.MarkFlagRequired("clients")
-			cmd.MarkFlagRequired("interface")
-		}
-	},
 	Run: func(cmd *cobra.Command, args []string) {
+		viperConfig := GetConfig()
+		viperConfig.BindPFlag("broadcast", cmd.Flags().Lookup("broadcast"))
+		viperConfig.BindPFlag("debug", cmd.Flags().Lookup("debug"))
+		viperConfig.BindPFlag("interface", cmd.Flags().Lookup("interface"))
+		viperConfig.BindPFlag("filter", cmd.Flags().Lookup("filter"))
+
+		viperConfig.AutomaticEnv()
+
 		// Validate all flags
-		all_flags := cmd.Flags()
-		co, err := ValidateListenConfigOptions("listen", all_flags)
+		//all_flags := cmd.Flags()
+		//co, err := ValidateListenConfigOptions("listen", all_flags)
+		co, err := ViperValidateListenConfigOptions("listen", viperConfig)
 		if err != nil {
 			fmt.Printf("INVALID CONFIGURTAION ERROR: %s\n", err)
 			return
@@ -155,9 +209,7 @@ func init() {
 
 	listenCmd.Flags().BoolP("broadcast", "b", false, "Broadcast discovery packets")
 	listenCmd.Flags().BoolP("debug", "d", false, "Print debug messages")
-	listenCmd.Flags().StringP("clients", "c", "", "List of clients to forward Discovery Packets")
+	//listenCmd.Flags().StringP("clients", "c", "", "List of clients to forward Discovery Packets")
 	listenCmd.Flags().StringP("interface", "i", "", "Network interface to rebroadcast packets on")
 	listenCmd.Flags().String("filter", "udp and port 4992 and dst host 255.255.255.255", "Berkley packet filter rule to match packets against. Defaults to: udp and port 4992 and dst host 255.255.255.255")
-
-	// TODO: investigate automatically populating from viper .flextool file
 }

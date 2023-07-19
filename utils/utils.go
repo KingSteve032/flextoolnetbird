@@ -4,16 +4,22 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/google/gopacket"
 	"github.com/littleairmada/vrt"
 	"github.com/spf13/pflag"
 )
+
+type OpnsenseApi struct {
+	Username string
+	Password string
+	Url      string
+}
 
 type NetInteface struct {
 	Name       string
@@ -22,17 +28,33 @@ type NetInteface struct {
 }
 
 type ConfigOptions struct {
-	Mode            string
-	PcapFile        string
-	NetworkInteface NetInteface
-	Clients         []net.IP
-	EnableBroadcast bool
-	EnableDebug     bool
-	BPFFilter       string
+	Mode                  string
+	PcapFile              string
+	NetworkInteface       NetInteface
+	Clients               []net.IP
+	EnableBroadcast       bool
+	EnableDebug           bool
+	EnableDeleteUsers     bool
+	BPFFilter             string
+	OpnsenseApiConnection OpnsenseApi
 }
 
-func ValidateConfigClientIpAddresses(unfilter_string string) {
-	fmt.Println("TODO")
+type VpnRouteRow struct {
+	VirtualAddress string `json:"virtual_address"`
+	CommonName     string `json:"common_name"`
+	RealAddress    string `json:"real_address"`
+	LastRef        string `json:"last_ref"`
+	LastRefTime    string `json:"last_ref__time_t_"`
+	Type           string `json:"type"`
+	ID             string `json:"id"`
+	Description    string `json:"description"`
+}
+
+type VpnRoutes struct {
+	Total    int `json:"total"`
+	RowCount int `json:"rowCount"`
+	Current  int `json:"current"`
+	Rows     []VpnRouteRow
 }
 
 // GetNetworkInterfaceByName returns details about a single user provided interface
@@ -40,19 +62,22 @@ func GetNetworkInterfaceByName(name string) {
 	netInterface, err := net.InterfaceByName(name)
 
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error accessing network interface: ", err)
+		//return "", err
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.TabIndent)
-	fmt.Fprintln(w, "Interface Id\tInterface Name\tHardware Address\tIP Addresses")
-	fmt.Fprintln(w, "============\t==============\t================\t============")
+	header := "Interface Id\tInterface Name\tHardware Address\tIP Addresses\n============\t==============\t================\t============"
 	var addrs_output string
 	if addrs, err := netInterface.Addrs(); err == nil {
 		for _, addr := range addrs {
 			addrs_output = addrs_output + " " + addr.String()
 		}
 	}
-	fmt.Fprintln(w, strconv.FormatInt(int64(netInterface.Index), 10)+"\t"+netInterface.Name+"\t"+netInterface.HardwareAddr.String()+"\t"+addrs_output)
-	w.Flush()
+
+	output := header + "\n" + strconv.FormatInt(int64(netInterface.Index), 10) + "\t" + netInterface.Name + "\t" + netInterface.HardwareAddr.String() + "\t" + addrs_output + "\n"
+
+	fmt.Print(output)
+
+	//return output, nil
 }
 
 // ValidateNetworkInterfaceByName returns details about a single user provided interface
@@ -194,18 +219,19 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 		fmt.Println("Send Discovery Packet Disabled")
 		return
 	}
-	if len(co.Clients) == 0 || co.Clients == nil {
-		// No clients so no need to transmit discover packets
-		fmt.Println("No active clients")
-		return
+
+	u, err := UsersDb()
+	if err != nil {
+		log.Fatal("error accessing db: ", err.Error())
 	}
-	// TODO: create udp payload using p.SerializeTo()
+
+	// Create udp payload using p.SerializeTo()
 	buf := gopacket.NewSerializeBuffer()
 	opts := gopacket.SerializeOptions{
 		FixLengths:       false,
 		ComputeChecksums: false,
 	}
-	err := p.SerializeTo(buf, opts)
+	err = p.SerializeTo(buf, opts)
 	if err != nil {
 		fmt.Println("Unable to serialize VRT packet into byte stream: ", err)
 		return
@@ -213,45 +239,33 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 
 	//fmt.Println("buf.Bytes: ", hex.Dump(buf.Bytes()))
 
-	//timeout := time.Duration(2) * time.Second
-	// handle, err = pcap.OpenLive(co.NetworkInteface.Name, 1500, true, pcap.BlockForever)
-	// fmt.Println("FIXME handle: ", handle)
-	// fmt.Println("FIXME err: ", err)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// 	return
-	// }
-	// defer handle.Close()
+	client_ips, err := u.GetUserIpAddresses()
+	if err != nil {
+		fmt.Println("Error retrieving vpn client ips from sqlite db: ", err)
+		return
+	}
 
-	// TODO: for each ip in clients:
-	// 		TODO: create new UDP packet
-	// 		TODO: send udp packet
-	// todo range clients
-	for _, clientIp := range co.Clients {
+	// fmt.Println("client_ips: ", client_ips)
+
+	// for _, clientIp := range co.Clients {
+	for _, clientIp := range client_ips {
 		fmt.Println("Sending to Discovery Packet to", clientIp, "on interface", co.NetworkInteface.Name)
-		//buffer := gopacket.NewSerializeBuffer()
-		//broadcastAddress, _ := net.ParseMAC("FF:FF:FF:FF:FF:FF")
-		// gopacket.SerializeLayers(buffer, options,
-		// 	&layers.Ethernet{SrcMAC: co.NetworkInteface.MACAddress, DstMAC: broadcastAddress},
-		// 	&layers.IPv4{SrcIP: co.NetworkInteface.IPAddress, DstIP: clientIp.To4(), Protocol: layers.IPProtocolUDP},
-		// 	&layers.UDP{SrcPort: layers.UDPPort(4992), DstPort: layers.UDPPort(4992)},
-		// 	gopacket.Payload(buf.Bytes()),
-		// )
-		//outgoingPacket := buffer.Bytes()
-		// fmt.Println("outgoingPacket: ", outgoingPacket)
 
-		ServerAddr, err := net.ResolveUDPAddr("udp", clientIp.String()+":4992")
+		ServerAddr, err := net.ResolveUDPAddr("udp", clientIp+":4992")
 		if err != nil {
 			fmt.Println("error with ServerAddr: ", err)
+			return
 		}
 		LocalAddr, err := net.ResolveUDPAddr("udp", co.NetworkInteface.IPAddress.String()+":0")
 		if err != nil {
 			fmt.Println("DEBUG co.NetworkInteface: ", co.NetworkInteface)
 			fmt.Println("error with LocalAddr: ", err)
+			return
 		}
 		Conn, err := net.DialUDP("udp", LocalAddr, ServerAddr)
 		if err != nil {
 			fmt.Println("error with Conn: ", err)
+			return
 		}
 		defer Conn.Close()
 
@@ -261,14 +275,7 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 		// fmt.Printf("Sent message %s to %s\n", msg, target)
 		if err != nil {
 			fmt.Println("error sending udp packet: ", err)
+			return
 		}
-
-		// Send our packet
-		// err = handle.WritePacketData(outgoingPacket)
-		// fmt.Println("write err: ", err)
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
 	}
-	//}
 }

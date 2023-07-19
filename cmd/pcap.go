@@ -17,9 +17,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Set filter for VITA on 4992/udp
-//var filter string = "udp and port 4992 and dst host 255.255.255.255"
-
 // ParsePcapFile parses the given pcap file for VRT packets. Error is returned as needed.
 func ParsePcapFile(co utils.ConfigOptions) error {
 	fmt.Println("Parsing PCAP file...")
@@ -57,7 +54,7 @@ func ParsePcapFile(co utils.ConfigOptions) error {
 						if !co.EnableBroadcast {
 							fmt.Println("Send Discovery Packet Disabled")
 						} else {
-							fmt.Println("FlexRadio Discovery Packet detected")
+							//fmt.Println("FlexRadio Discovery Packet detected")
 							utils.MaybeSendDiscoveryPacket(co, vrtStruct)
 						}
 					}

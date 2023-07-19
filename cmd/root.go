@@ -5,13 +5,22 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"path"
+	"path/filepath"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var cfgFile string
+var config *viper.Viper
+
+func GetConfig() *viper.Viper {
+	return config
+}
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -53,24 +62,37 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		// Search config in home directory with name ".flextool" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".flextool")
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	c := viper.New()
+	c.SetConfigType("env")
+	c.SetConfigName(".flextool") // name of config file (without extension)
+	if cfgFile != "" {           // enable ability to specify config file via flag
+		fmt.Println(">>> cfgFile: ", cfgFile)
+		c.SetConfigFile(cfgFile)
+		configDir := path.Dir(cfgFile)
+		if configDir != "." && configDir != dir {
+			c.AddConfigPath(configDir)
+		}
+	}
+
+	c.AddConfigPath(dir)
+	c.AddConfigPath(".")
+	c.AddConfigPath("$HOME")
+	c.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	if err := c.ReadInConfig(); err == nil {
+		fmt.Println("Using config file:", c.ConfigFileUsed())
+		config = c
+	} else {
+		fmt.Println(err)
 	}
+	c.WatchConfig()
+	c.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Println("Config file changed:", e.Name)
+	})
 }
