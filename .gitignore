@@ -19,3 +19,13 @@
 
 # Go workspace file
 go.work
+
+dist/
+
+# Config Files
+.flextool
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
