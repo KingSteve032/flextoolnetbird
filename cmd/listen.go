@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -86,6 +87,7 @@ func ValidateListenConfigOptions(mode string, all_flags *pflag.FlagSet) (co util
 func ViperValidateListenConfigOptions(mode string, c *viper.Viper) (co utils.ConfigOptions, err error) {
 	// TODO: if settings is empty, return empty ConfigOptions and error
 	flag_broadcast := c.GetBool("broadcast")
+	flag_broadcastport := c.GetInt("port")
 	flag_debug := c.GetBool("debug")
 	flag_bpffilter := c.GetString("filter")
 	flag_interface := c.GetString("interface")
@@ -110,6 +112,14 @@ func ViperValidateListenConfigOptions(mode string, c *viper.Viper) (co utils.Con
 		co.EnableBroadcast = true
 	default:
 		co.EnableBroadcast = false
+	}
+
+	// validate flag_broadcastport
+	if math.Signbit(float64(flag_broadcastport)) || flag_broadcastport >= 65536 {
+		fmt.Println("Port number must be a valid port between 0 and 65535")
+		return utils.ConfigOptions{}, err
+	} else {
+		co.BroadcastPort = flag_broadcastport
 	}
 
 	// validate EnableDebug
@@ -179,6 +189,7 @@ This command causes flextool to listens for FlexRadio Discovery Packets on
 a given network interface and retransmit them as UDP unicast packets to a list 
 of client IP addresses. For example:
 
+Listen for FlexRadio Discovery packets on 4992/udp and resend them as UDP unicast packets on 14992/udp using eth0:
 flextool listen -i eth0 -b -c 192.168.1.100
 `,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -187,19 +198,18 @@ flextool listen -i eth0 -b -c 192.168.1.100
 		viperConfig.BindPFlag("debug", cmd.Flags().Lookup("debug"))
 		viperConfig.BindPFlag("interface", cmd.Flags().Lookup("interface"))
 		viperConfig.BindPFlag("filter", cmd.Flags().Lookup("filter"))
+		viperConfig.BindPFlag("port", cmd.Flags().Lookup("port"))
 
 		viperConfig.AutomaticEnv()
 
-		// Validate all flags
-		//all_flags := cmd.Flags()
-		//co, err := ValidateListenConfigOptions("listen", all_flags)
+		// Validate configuration options
 		co, err := ViperValidateListenConfigOptions("listen", viperConfig)
 		if err != nil {
 			fmt.Printf("INVALID CONFIGURTAION ERROR: %s\n", err)
 			return
 		}
 
-		// Parse PCAP file
+		// Listen for Packets
 		ListenForPackets(co)
 	},
 }
@@ -207,9 +217,10 @@ flextool listen -i eth0 -b -c 192.168.1.100
 func init() {
 	rootCmd.AddCommand(listenCmd)
 
+	// Local Flags
 	listenCmd.Flags().BoolP("broadcast", "b", false, "Broadcast discovery packets")
 	listenCmd.Flags().BoolP("debug", "d", false, "Print debug messages")
-	//listenCmd.Flags().StringP("clients", "c", "", "List of clients to forward Discovery Packets")
 	listenCmd.Flags().StringP("interface", "i", "", "Network interface to rebroadcast packets on")
 	listenCmd.Flags().String("filter", "udp and port 4992 and dst host 255.255.255.255", "Berkley packet filter rule to match packets against. Defaults to: udp and port 4992 and dst host 255.255.255.255")
+	listenCmd.Flags().IntVarP(&broadcastPort, "port", "p", 14992, "UDP port to broadcast FlexRadio discovery packets to")
 }

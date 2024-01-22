@@ -4,11 +4,20 @@ Proof of concept utility to rebroadcast FlexRadio Discovery Packets to OPNSense 
 
 ## about
 
-This tool is deisgned to run on a linux machine on teh same subnet as a [FlexRadio Signature Radio](https://www.flexradio.com/comparison/) and retransmit the VITA 49 discovery packets to a group of VPN users connected to a OPNSense firewall.
+This tool is deisgned to run on a linux machine on the same subnet as a [FlexRadio Signature Radio](https://www.flexradio.com/comparison/) and retransmit the VITA 49 discovery packets to a group of VPN users connected to a OPNSense firewall.
+
+## build
+
+This tool requires `libpcap-dev` or the correct equivalent for your operating system to be installed.
+
+To build for your OS & architecture, run:
+
+```
+go mod tidy
+go build
+```
 
 ## usage
-
-This tool requires `libpcap-dev` or the correct equivalent to be installed for your operating system.
 
 Create a `.flextool` file with the appropriate configuration for your use case.
 

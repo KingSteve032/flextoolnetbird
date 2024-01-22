@@ -17,6 +17,7 @@ import (
 
 var cfgFile string
 var config *viper.Viper
+var broadcastPort int
 
 func GetConfig() *viper.Viper {
 	return config
@@ -25,16 +26,10 @@ func GetConfig() *viper.Viper {
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "flextool",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "FlexRadio Discovery Packet Rebroadcasting Tool",
+	Long: `
+flextool rebroadcasts FlexRadio Discovery Packets it observes 
+on 4992/UDP to 14992/udp (user configurable).`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -49,14 +44,10 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
+	// Global Flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.flextool.yaml)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
+	// Local Flags
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
@@ -84,7 +75,6 @@ func initConfig() {
 	c.AddConfigPath("$HOME")
 	c.AutomaticEnv() // read in environment variables that match
 
-	// If a config file is found, read it in.
 	if err := c.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", c.ConfigFileUsed())
 		config = c

@@ -103,7 +103,13 @@ func GetOpnsenseVpnConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Syncs Opnsense VPN connected Users to the client list",
-	Long:  `Syncs Opnsense VPN connected Users to the clients table in sqlite database 'flextool.db'`,
+	Long: `Syncs Opnsense VPN connected Users to the clients table in sqlite database 'flextool.db'
+
+Synchronize Opnsense VPN client to the sqlite database:
+./flextool sync
+
+Delete all VPN clients in the sqlite database and then synchronize Opnsense VPN clients to the database:
+./flextool sync -d`,
 	Run: func(cmd *cobra.Command, args []string) {
 		u, err := utils.UsersDb()
 		if err != nil {
