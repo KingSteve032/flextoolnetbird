@@ -41,7 +41,11 @@ var infoCmd = &cobra.Command{
 	Short: "Displays information about the network interfaces",
 	Long: `Displays information about the system's network interfaces.
 
-TODO put info cmd examples in this usage statement`,
+List all network interfaces:
+./flextool info list
+
+Get the details of a specific network interface:
+./flextool info get -i eth0`,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		get_flag, _ := cmd.Flags().GetBool("get")
 		if get_flag {

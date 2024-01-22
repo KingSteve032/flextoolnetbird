@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 
 	"github.com/google/gopacket"
@@ -15,7 +16,84 @@ import (
 	"github.com/littleairmada/flextool/utils"
 	"github.com/littleairmada/vrt"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+// ViperValidatePcapConfigOptions validates the configuration options used during 'pcap' mode
+func ViperValidatePcapConfigOptions(mode string, c *viper.Viper) (co utils.ConfigOptions, err error) {
+	// TODO: if settings is empty, return empty ConfigOptions and error
+	flag_broadcast := c.GetBool("broadcast")
+	flag_broadcastport := c.GetInt("port")
+	flag_debug := c.GetBool("debug")
+	flag_bpffilter := c.GetString("filter")
+	flag_interface := c.GetString("interface")
+	flag_pcapfile := c.GetString("pcapfile")
+
+	co = utils.ConfigOptions{}
+	// validate MODE
+	switch mode {
+	case "info":
+		co.Mode = "info"
+	case "pcap":
+		co.Mode = "pcap"
+	case "listen":
+		co.Mode = "listen"
+	default:
+		err := fmt.Errorf("the requested mode \"%s\" is not a valid mode", mode)
+		return utils.ConfigOptions{}, err
+	}
+
+	// validate pcapFile if co.Mode is pcap
+	if co.Mode == "pcap" {
+		if _, err := os.Stat(flag_pcapfile); err == nil {
+			co.PcapFile = flag_pcapfile
+
+		} else if errors.Is(err, os.ErrNotExist) {
+			err := fmt.Errorf("the requested pcapfile \"%s\" does not exist", flag_pcapfile)
+			return co, err
+
+		} else {
+			return co, err
+		}
+	}
+
+	// validate EnableBroadcast
+	switch flag_broadcast {
+	case true:
+		co.EnableBroadcast = true
+		tempNetworkInterface, err := utils.ValidateNetworkInterfaceByName(flag_interface)
+		if err != nil {
+			return co, err
+		}
+		co.NetworkInteface = tempNetworkInterface
+	default:
+		co.EnableBroadcast = false
+	}
+
+	// validate flag_broadcastport
+	if math.Signbit(float64(flag_broadcastport)) || flag_broadcastport >= 65536 {
+		fmt.Println("Port number must be a valid port between 0 and 65535")
+		return utils.ConfigOptions{}, err
+	} else {
+		co.BroadcastPort = flag_broadcastport
+	}
+
+	// validate EnableDebug
+	switch flag_debug {
+	case true:
+		co.EnableDebug = true
+	default:
+		co.EnableDebug = false
+	}
+
+	if flag_bpffilter != "" {
+		co.BPFFilter = flag_bpffilter
+	} else {
+		co.BPFFilter = "udp and port 4992 and dst host 255.255.255.255"
+	}
+
+	return co, nil
+}
 
 // ParsePcapFile parses the given pcap file for VRT packets. Error is returned as needed.
 func ParsePcapFile(co utils.ConfigOptions) error {
@@ -80,23 +158,35 @@ func ParsePcapFile(co utils.ConfigOptions) error {
 var pcapCmd = &cobra.Command{
 	Use:   "pcap",
 	Short: "Processes FlexRadio Discovery Packets from a packet capture file",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Long: `
+This command causes flextool to read a packet capture file for FlexRadio Discovery
+Packets on 4992/udp and retransmit them as UDP unicast packets to a list 
+of client IP addresses.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+Read test.pcap and broadcast FlexRadio Discovery packets using eth0:
+flextool pcap -f test.pcap -i eth0 -b
+
+Print out FlexRadio Discovery packets from test.pcap:
+flextool pcap -f test.pcap`,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		broadcast_flag, _ := cmd.Flags().GetBool("broadcast")
 		if broadcast_flag {
-			cmd.MarkFlagRequired("clients")
 			cmd.MarkFlagRequired("interface")
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// Validate all flags
-		all_flags := cmd.Flags()
-		co, err := utils.ValidateConfigOptions("pcap", all_flags)
+		viperConfig := GetConfig()
+		viperConfig.BindPFlag("pcapfile", cmd.Flags().Lookup("pcapfile"))
+		viperConfig.BindPFlag("broadcast", cmd.Flags().Lookup("broadcast"))
+		viperConfig.BindPFlag("debug", cmd.Flags().Lookup("debug"))
+		viperConfig.BindPFlag("interface", cmd.Flags().Lookup("interface"))
+		viperConfig.BindPFlag("filter", cmd.Flags().Lookup("filter"))
+		viperConfig.BindPFlag("port", cmd.Flags().Lookup("port"))
+
+		viperConfig.AutomaticEnv()
+
+		// Validate configuration options
+		co, err := ViperValidatePcapConfigOptions("pcap", viperConfig)
 		if err != nil {
 			fmt.Printf("INVALID CONFIGURTAION ERROR: %s\n", err)
 			return
@@ -110,21 +200,13 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(pcapCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// pcapCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// pcapCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Local Flags
 	pcapCmd.Flags().StringP("pcapfile", "f", "", "Packet capture file (*.pcap or *.pcapng)")
 	pcapCmd.Flags().BoolP("broadcast", "b", false, "Broadcast discovery packets")
 	pcapCmd.Flags().BoolP("debug", "d", false, "Print debug messages")
-	pcapCmd.Flags().StringP("clients", "c", "", "List of clients to forward Discovery Packets")
 	pcapCmd.Flags().StringP("interface", "i", "", "Network interface to rebroadcast packets on")
 	pcapCmd.Flags().String("filter", "udp and port 4992 and dst host 255.255.255.255", "Berkley packet filter rule to match packets against. Defaults to: udp and port 4992 and dst host 255.255.255.255")
+	pcapCmd.Flags().IntVarP(&broadcastPort, "port", "p", 14992, "UDP port to broadcast FlexRadio discovery packets to")
 
 	// TODO: investigate automatically populating from viper .flextool file
 	// pcapfile

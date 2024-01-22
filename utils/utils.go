@@ -2,17 +2,13 @@ package utils
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"strconv"
-	"strings"
 
 	"github.com/google/gopacket"
 	"github.com/littleairmada/vrt"
-	"github.com/spf13/pflag"
 )
 
 type OpnsenseApi struct {
@@ -37,6 +33,7 @@ type ConfigOptions struct {
 	EnableDeleteUsers     bool
 	BPFFilter             string
 	OpnsenseApiConnection OpnsenseApi
+	BroadcastPort         int
 }
 
 type VpnRouteRow struct {
@@ -104,89 +101,6 @@ func ValidateNetworkInterfaceByName(name string) (NetInteface, error) {
 	return ni, nil
 }
 
-func ValidateConfigOptions(mode string, all_flags *pflag.FlagSet) (co ConfigOptions, err error) {
-	// TODO: if settings is empty, return empty ConfigOptions and error
-	flag_pcapfile := all_flags.Lookup("pcapfile").Value.String()
-	flag_broadcast := all_flags.Lookup("broadcast").Value.String()
-	flag_debug := all_flags.Lookup("debug").Value.String()
-	flag_clients := all_flags.Lookup("clients").Value.String()
-	flag_bpffilter := all_flags.Lookup("filter").Value.String()
-
-	co = ConfigOptions{}
-	// validate MODE
-	switch mode {
-	case "info":
-		co.Mode = "info"
-	case "pcap":
-		co.Mode = "pcap"
-	case "listen":
-		co.Mode = "listen"
-	default:
-		err := fmt.Errorf("the requested mode \"%s\" is not a valid mode", mode)
-		return ConfigOptions{}, err
-	}
-
-	// validate pcapFile if co.Mode is pcap
-	if co.Mode == "pcap" {
-		if _, err := os.Stat(flag_pcapfile); err == nil {
-			co.PcapFile = flag_pcapfile
-
-		} else if errors.Is(err, os.ErrNotExist) {
-			err := fmt.Errorf("the requested pcapfile \"%s\" does not exist", flag_pcapfile)
-			return ConfigOptions{}, err
-
-		} else {
-			return ConfigOptions{}, err
-
-		}
-	}
-
-	// validate EnableBroadcast
-	switch flag_broadcast {
-	case "true":
-		co.EnableBroadcast = true
-	default:
-		co.EnableBroadcast = false
-	}
-
-	// validate EnableDebug
-	switch flag_debug {
-	case "true":
-		co.EnableDebug = true
-	default:
-		co.EnableDebug = false
-	}
-
-	// validate NetworkInteface
-	flag_interface := all_flags.Lookup("interface").Value.String()
-	tempNetworkInterface, err := ValidateNetworkInterfaceByName(flag_interface)
-	if err != nil {
-		return co, err
-	}
-	co.NetworkInteface = tempNetworkInterface
-
-	if flag_bpffilter != "" {
-		co.BPFFilter = flag_bpffilter
-	} else {
-		co.BPFFilter = "udp and port 4992 and dst host 255.255.255.255"
-	}
-
-	// validate Clients
-	// TODO: fix error handling
-	if co.EnableBroadcast {
-		var validClients []net.IP
-		allClients := strings.Split(flag_clients, ",")
-		for _, c := range allClients {
-			cIp := net.ParseIP(string(c))
-			validClients = append(validClients, cIp)
-		}
-		co.Clients = validClients
-	}
-
-	// Return ConfigOptions and no error
-	return co, nil
-}
-
 func PrintVrtPacket(vrt_packet vrt.VRT) {
 	fmt.Println("VRT Packet Header Type: ", vrt_packet.Header.Type)
 	fmt.Println("VRT Packet Header ClassID Present?: ", vrt_packet.Header.C)
@@ -251,7 +165,7 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 	for _, clientIp := range client_ips {
 		fmt.Println("Sending to Discovery Packet to", clientIp, "on interface", co.NetworkInteface.Name)
 
-		ServerAddr, err := net.ResolveUDPAddr("udp", clientIp+":4992")
+		ServerAddr, err := net.ResolveUDPAddr("udp", clientIp+":"+strconv.FormatInt(int64(co.BroadcastPort), 10))
 		if err != nil {
 			fmt.Println("error with ServerAddr: ", err)
 			return
