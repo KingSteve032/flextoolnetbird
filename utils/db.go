@@ -45,7 +45,7 @@ func (c *Users) DeleteAllUsers() error {
 
 // Insert adds a user record to the db
 func (c *Users) Insert(activity VpnRouteRow) (int, error) {
-	res, err := c.db.Exec("INSERT INTO users (username, client_ip) VALUES(?,?);", activity.CommonName, activity.VirtualAddress)
+	res, err := c.db.Exec("INSERT INTO users (username, client_ip) VALUES(?,?);", activity.Name, activity.IP)
 	if err != nil {
 		return 0, err
 	}

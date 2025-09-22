@@ -4,15 +4,13 @@ Copyright © 2023 Blair Gillam <ns1h@airmada.net>
 package cmd
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"time"
 
-	"github.com/littleairmada/flextool/utils"
+	"github.com/kingsteve032/flextoolnetbird/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,17 +40,9 @@ func ViperValidateSyncConfigOptions(c *viper.Viper) (co utils.ConfigOptions, err
 		co.EnableDebug = false
 	}
 
-	apiUsername := c.GetString("OPNSENSE_USERNAME")
-	if apiUsername != "" {
-		co.OpnsenseApiConnection.Username = apiUsername
-	} else {
-		err := fmt.Errorf("OPNSENSE_USERNAME is not set in the config file")
-		return co, err
-	}
-
 	apiPassword := c.GetString("OPNSENSE_PASSWORD")
 	if apiPassword != "" {
-		co.OpnsenseApiConnection.Password = apiPassword
+		co.NetbirdApiConnection.Password = apiPassword
 	} else {
 		err := fmt.Errorf("OPNSENSE_PASSWORD is not set in the config file")
 		return co, err
@@ -60,7 +50,7 @@ func ViperValidateSyncConfigOptions(c *viper.Viper) (co utils.ConfigOptions, err
 
 	apiUrl := c.GetString("OPNSENSE_API_URL")
 	if apiUrl != "" {
-		co.OpnsenseApiConnection.Url = apiUrl
+		co.NetbirdApiConnection.Url = apiUrl
 	} else {
 		err := fmt.Errorf("OPNSENSE_API_URL is not set in the config file")
 		return co, err
@@ -69,34 +59,41 @@ func ViperValidateSyncConfigOptions(c *viper.Viper) (co utils.ConfigOptions, err
 	return co, nil
 }
 
-// GetOpnsenseVpnConnectedUsers returns a list of VPN usernames and their VPN Client IP Address
-func GetOpnsenseVpnConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, error) {
-	//fmt.Println("Executing GetOpnsenseVpnConnectedUsers")
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	req, err := http.NewRequest("GET", co.OpnsenseApiConnection.Url, nil)
+// / GetNetBirdConnectedUsers returns a list of VPN device names and their VPN Client IP Address
+func GetNetBirdConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, error) {
+	url := co.NetbirdApiConnection.Url
+	method := "GET"
+
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
-		// TODO: hande context deadline exceeded (timeout) error
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(co.OpnsenseApiConnection.Username, co.OpnsenseApiConnection.Password)
-	resp, err := client.Do(req)
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Authorization", "Token "+co.NetbirdApiConnection.Password)
+
+	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
-	defer resp.Body.Close()
-	bodyText, err := io.ReadAll(resp.Body)
+	defer res.Body.Close()
+
+	bodyText, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var result utils.VpnRoutes
-	json.Unmarshal([]byte(bodyText), &result)
+	// Print the body text (for debugging)
+	fmt.Println(string(bodyText))
 
-	return result.Rows, nil
+	// Assuming the body contains JSON that can be unmarshalled into a slice of VpnRouteRow
+	var clients []utils.VpnRouteRow
+	if err := json.Unmarshal(bodyText, &clients); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)
+	}
+
+	return clients, nil
 }
 
 // syncCmd represents the info command
@@ -128,7 +125,7 @@ Delete all VPN clients in the sqlite database and then synchronize Opnsense VPN 
 		}
 
 		// Retrieve list of vpn connected users
-		clients, err := GetOpnsenseVpnConnectedUsers(co)
+		clients, err := GetNetBirdConnectedUsers(co)
 		if err != nil {
 			log.Fatal("error retrieving VPN users: ", err.Error())
 		}
@@ -141,7 +138,7 @@ Delete all VPN clients in the sqlite database and then synchronize Opnsense VPN 
 
 		// Insert connected vpn users into db
 		for _, vpnUser := range clients {
-			if vpnUser.CommonName != "UNDEF" {
+			if vpnUser.Name != "UNDEF" {
 				u.Insert(vpnUser)
 			}
 		}

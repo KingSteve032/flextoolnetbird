@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"github.com/littleairmada/flextool/utils"
+	"github.com/kingsteve032/flextoolnetbird/utils"
 	"github.com/spf13/cobra"
 )
 

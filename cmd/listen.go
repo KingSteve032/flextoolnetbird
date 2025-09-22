@@ -10,7 +10,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"github.com/littleairmada/flextool/utils"
+	"github.com/kingsteve032/flextoolnetbird/utils"
 	"github.com/littleairmada/vrt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

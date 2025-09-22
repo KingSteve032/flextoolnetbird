@@ -11,8 +11,7 @@ import (
 	"github.com/littleairmada/vrt"
 )
 
-type OpnsenseApi struct {
-	Username string
+type NetbirdApi struct {
 	Password string
 	Url      string
 }
@@ -24,27 +23,48 @@ type NetInteface struct {
 }
 
 type ConfigOptions struct {
-	Mode                  string
-	PcapFile              string
-	NetworkInteface       NetInteface
-	Clients               []net.IP
-	EnableBroadcast       bool
-	EnableDebug           bool
-	EnableDeleteUsers     bool
-	BPFFilter             string
-	OpnsenseApiConnection OpnsenseApi
-	BroadcastPort         int
+	Mode                 string
+	PcapFile             string
+	NetworkInteface      NetInteface
+	Clients              []net.IP
+	EnableBroadcast      bool
+	EnableDebug          bool
+	EnableDeleteUsers    bool
+	BPFFilter            string
+	NetbirdApiConnection NetbirdApi
+	BroadcastPort        int
 }
 
 type VpnRouteRow struct {
-	VirtualAddress string `json:"virtual_address"`
-	CommonName     string `json:"common_name"`
-	RealAddress    string `json:"real_address"`
-	LastRef        string `json:"last_ref"`
-	LastRefTime    string `json:"last_ref__time_t_"`
-	Type           string `json:"type"`
-	ID             string `json:"id"`
-	Description    string `json:"description"`
+	AccessiblePeersCount int    `json:"accessible_peers_count"`
+	ApprovalRequired     bool   `json:"approval_required"`
+	CityName             string `json:"city_name"`
+	Connected            bool   `json:"connected"`
+	ConnectionIP         string `json:"connection_ip"`
+	CountryCode          string `json:"country_code"`
+	DNSLabel             string `json:"dns_label"`
+	GeoNameID            int    `json:"geoname_id"`
+	Groups               []struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		PeersCount int    `json:"peers_count"`
+	} `json:"groups"`
+	Hostname                    string `json:"hostname"`
+	ID                          string `json:"id"`
+	InactivityExpirationEnabled bool   `json:"inactivity_expiration_enabled"`
+	IP                          string `json:"ip"`
+	KernelVersion               string `json:"kernel_version"`
+	LastLogin                   string `json:"last_login"`
+	LastSeen                    string `json:"last_seen"`
+	LoginExpirationEnabled      bool   `json:"login_expiration_enabled"`
+	LoginExpired                bool   `json:"login_expired"`
+	Name                        string `json:"name"`
+	OS                          string `json:"os"`
+	SerialNumber                string `json:"serial_number"`
+	SSHEnabled                  bool   `json:"ssh_enabled"`
+	UIVersion                   string `json:"ui_version"`
+	UserID                      string `json:"user_id"`
+	Version                     string `json:"version"`
 }
 
 type VpnRoutes struct {
