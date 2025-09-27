@@ -16,56 +16,39 @@ import (
 	"github.com/spf13/viper"
 )
 
+// ViperValidateSyncConfigOptions validates configuration options for the sync command
 func ViperValidateSyncConfigOptions(c *viper.Viper) (co utils.ConfigOptions, err error) {
-	// TODO: if settings is empty, return empty ConfigOptions and error
 	flag_delete := c.GetBool("delete")
 	flag_debug := c.GetBool("debug")
 
-	co = utils.ConfigOptions{}
-	co.Mode = "sync"
-
-	// validate EnableDeleteUsers
-	switch flag_delete {
-	case true:
-		co.EnableDeleteUsers = true
-	default:
-		co.EnableDeleteUsers = false
+	co = utils.ConfigOptions{
+		Mode:              "sync",
+		EnableDeleteUsers: flag_delete,
+		EnableDebug:       flag_debug,
 	}
 
-	// validate EnableDebug
-	switch flag_debug {
-	case true:
-		co.EnableDebug = true
-	default:
-		co.EnableDebug = false
-	}
-
-	apiPassword := c.GetString("OPNSENSE_PASSWORD")
+	// Validate NetBird API connection details
+	apiPassword := c.GetString("NETBIRD_API_TOKEN")
 	if apiPassword != "" {
 		co.NetbirdApiConnection.Password = apiPassword
 	} else {
-		err := fmt.Errorf("OPNSENSE_PASSWORD is not set in the config file")
-		return co, err
+		return co, fmt.Errorf("NETBIRD_API_TOKEN is not set in the config file or environment")
 	}
 
-	apiUrl := c.GetString("OPNSENSE_API_URL")
+	apiUrl := c.GetString("NETBIRD_API_URL")
 	if apiUrl != "" {
 		co.NetbirdApiConnection.Url = apiUrl
 	} else {
-		err := fmt.Errorf("OPNSENSE_API_URL is not set in the config file")
-		return co, err
+		return co, fmt.Errorf("NETBIRD_API_URL is not set in the config file or environment")
 	}
 
 	return co, nil
 }
 
-// / GetNetBirdConnectedUsers returns a list of VPN device names and their VPN Client IP Address
+// GetNetBirdConnectedUsers fetches all peers and returns only connected peers with valid IPs and non-blank UserID
 func GetNetBirdConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, error) {
-	url := co.NetbirdApiConnection.Url
-	method := "GET"
-
 	client := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest("GET", co.NetbirdApiConnection.Url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -75,78 +58,92 @@ func GetNetBirdConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, erro
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to do request: %w", err)
+		return nil, fmt.Errorf("failed to perform request: %w", err)
 	}
 	defer res.Body.Close()
 
-	bodyText, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Print the body text (for debugging)
-	fmt.Println(string(bodyText))
-
-	// Assuming the body contains JSON that can be unmarshalled into a slice of VpnRouteRow
-	var clients []utils.VpnRouteRow
-	if err := json.Unmarshal(bodyText, &clients); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)
+	if co.EnableDebug {
+		fmt.Println("NetBird API response:", string(body))
 	}
 
-	return clients, nil
+	var allPeers []utils.VpnRouteRow
+	if err := json.Unmarshal(body, &allPeers); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal NetBird response: %w", err)
+	}
+
+	// Filter only connected peers with valid IP and non-blank UserID
+	var connectedPeers []utils.VpnRouteRow
+	for _, p := range allPeers {
+		if p.Connected && p.IP != "" && p.Name != "UNDEF" && p.UserID != "" {
+			connectedPeers = append(connectedPeers, p)
+		}
+	}
+
+	return connectedPeers, nil
 }
 
-// syncCmd represents the info command
+// syncCmd represents the sync command
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Syncs Opnsense VPN connected Users to the client list",
-	Long: `Syncs Opnsense VPN connected Users to the clients table in sqlite database 'flextool.db'
+	Short: "Syncs NetBird VPN connected users to the local client database",
+	Long: `Syncs NetBird VPN connected users to the sqlite database 'flextool.db'.
 
-Synchronize Opnsense VPN client to the sqlite database:
+- Synchronize connected VPN clients to the sqlite database:
 ./flextool sync
 
-Delete all VPN clients in the sqlite database and then synchronize Opnsense VPN clients to the database:
+- Delete all VPN clients in the database and then sync connected clients:
 ./flextool sync -d`,
 	Run: func(cmd *cobra.Command, args []string) {
 		u, err := utils.UsersDb()
 		if err != nil {
-			log.Fatal("error accessing db: ", err.Error())
+			log.Fatal("error accessing db:", err)
 		}
 
 		viperConfig := GetConfig()
 		viperConfig.BindPFlag("delete", cmd.Flags().Lookup("delete"))
-
 		viperConfig.AutomaticEnv()
 
 		co, err := ViperValidateSyncConfigOptions(viperConfig)
 		if err != nil {
-			fmt.Printf("INVALID CONFIGURTAION ERROR: %s\n", err)
+			fmt.Printf("INVALID CONFIGURATION: %s\n", err)
 			return
 		}
 
-		// Retrieve list of vpn connected users
+		// Retrieve connected VPN users
 		clients, err := GetNetBirdConnectedUsers(co)
 		if err != nil {
-			log.Fatal("error retrieving VPN users: ", err.Error())
+			log.Fatal("error retrieving VPN users:", err)
 		}
-		fmt.Println(clients)
 
-		// Delete old vpn user records from db
+		if co.EnableDebug {
+			fmt.Println("Connected peers to sync:", clients)
+		}
+
+		// Delete old VPN users from DB if requested
 		if co.EnableDeleteUsers {
-			u.DeleteAllUsers()
-		}
-
-		// Insert connected vpn users into db
-		for _, vpnUser := range clients {
-			if vpnUser.Name != "UNDEF" {
-				u.Insert(vpnUser)
+			if err := u.DeleteAllUsers(); err != nil {
+				log.Fatal("error deleting users:", err)
 			}
 		}
+
+		// Insert connected peers into DB
+		for _, vpnUser := range clients {
+			if _, err := u.Insert(vpnUser); err != nil {
+				fmt.Printf("failed to insert VPN user %s: %v\n", vpnUser.Name, err)
+			}
+		}
+
+		fmt.Printf("Synced %d connected peers.\n", len(clients))
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(syncCmd)
 
-	syncCmd.Flags().BoolP("delete", "d", false, "deletes users from the database prior to user sync")
+	syncCmd.Flags().BoolP("delete", "d", false, "delete existing users from the database before sync")
 }

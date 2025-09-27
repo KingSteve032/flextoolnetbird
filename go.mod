@@ -5,7 +5,6 @@ go 1.19
 require (
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/google/gopacket v1.1.19
-	github.com/littleairmada/flextool v0.0.0-20240122145830-663b6822aaa1
 	github.com/littleairmada/vrt v0.0.2
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/spf13/cobra v1.7.0

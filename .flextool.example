@@ -3,7 +3,6 @@ INTERFACE = eth0
 BROADCAST = true
 PORT = 4992
 DEBUG = true
-OPNSENSE_USERNAME = ""
-OPNSENSE_PASSWORD = ""
-OPNSENSE_API_URL = "https://HOSTNAME/api/openvpn/service/searchRoutes"
+NETBIRD_API_TOKEN: "your_api_token_here"
+NETBIRD_API_URL: "https://api.netbird.io/v1/peers"
 DELETE = true
