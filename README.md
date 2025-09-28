@@ -1,44 +1,69 @@
 # flextool
 
-Proof of concept utility to rebroadcast FlexRadio Discovery Packets to OPNSense VPN users
+Proof-of-concept utility to rebroadcast **FlexRadio Discovery Packets** to **NetBird VPN** users.
 
-## about
+## Overview
 
-This tool is deisgned to run on a linux machine on the same subnet as a [FlexRadio Signature Radio](https://www.flexradio.com/comparison/) and retransmit the VITA 49 discovery packets to a group of VPN users connected to a OPNSense firewall.
+`flextool` is designed to run on a Linux machine located on the same subnet as a [FlexRadio Signature Series Radio](https://www.flexradio.com/comparison/).
 
-## build
+It captures **VITA 49 Discovery Packets** from the local network and retransmits them to VPN users connected through a **NetBird Management Server**. This enables FlexRadio clients running remotely (over NetBird) to detect and connect to radios as if they were on the same LAN.
 
-This tool requires `libpcap-dev` or the correct equivalent for your operating system to be installed.
+## Requirements
 
-To build for your OS & architecture, run:
+* Go 1.22+
+* `libpcap-dev` (or the equivalent package for your OS)
 
-```
+## Building
+
+Clone and build:
+
+```bash
 go mod tidy
 go build
 ```
 
-## usage
+## Configuration
 
-Create a `.flextool` file with the appropriate configuration for your use case.
+Create a `.flextool` configuration file with settings appropriate for your environment.
 
-VPN user routes can be synchronized from an OPNSENSE firewall/router using the administrative api. When each vpn connection has a common name, this tool syncs the common name and client ip address to a SQLite database for later use. A `-d` flag is used to purge the database of user records prior to inserting the latest list of VPN client ips.
+The tool syncs NetBird VPN users and their assigned IP addresses into a local SQLite database. These IPs are then used as retransmission targets for FlexRadio discovery packets.
 
-The user sync can be manually executed with:
+## Usage
 
-```
+### Sync NetBird VPN Users
+
+Synchronize VPN users and their client IPs from the NetBird Management API.
+
+```bash
 flextool sync -d
 ```
 
-The tool can listen on a local network interface for FlexRadio discovery broadcast packets and retransmit them to all VPN ip addresses listed in the SQLite database:
+The `-d` flag clears the database before inserting the updated list of VPN client IPs.
 
-```
+### Listen & Re-broadcast
+
+Listen for FlexRadio discovery broadcasts on the LAN and retransmit them to all NetBird VPN users:
+
+```bash
 flextool listen
 ```
 
-For troubleshooting and testing, the tool also supports displaying information about the local network interfaces and can read a PCAP file and retransmit those VITA 49 packets.
+### Info & Debugging
 
-```
+List network interfaces:
+
+```bash
 flextool info -l
+```
+
+Show details for a specific interface:
+
+```bash
 flextool info -g eth0
+```
+
+Read a PCAP file and retransmit FlexRadio packets:
+
+```bash
 flextool pcap
 ```
