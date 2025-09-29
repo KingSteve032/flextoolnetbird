@@ -6,3 +6,4 @@ DEBUG = true
 NETBIRD_API_TOKEN: "your_api_token_here"
 NETBIRD_API_URL: "https://api.netbird.io/v1/peers"
 DELETE = true
+DISCOVERY_DELAY_SECONDS=5

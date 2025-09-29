@@ -1,5 +1,6 @@
 /*
 Copyright © 2023 Blair Gillam <ns1h@airmada.net>
+Reconfigured for Netbird by Steven Griggs <kc4caw@w4car.org>
 */
 package cmd
 

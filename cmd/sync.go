@@ -1,6 +1,3 @@
-/*
-Copyright © 2023 Blair Gillam <ns1h@airmada.net>
-*/
 package cmd
 
 import (
@@ -91,13 +88,6 @@ func GetNetBirdConnectedUsers(co utils.ConfigOptions) ([]utils.VpnRouteRow, erro
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Syncs NetBird VPN connected users to the local client database",
-	Long: `Syncs NetBird VPN connected users to the sqlite database 'flextool.db'.
-
-- Synchronize connected VPN clients to the sqlite database:
-./flextool sync
-
-- Delete all VPN clients in the database and then sync connected clients:
-./flextool sync -d`,
 	Run: func(cmd *cobra.Command, args []string) {
 		u, err := utils.UsersDb()
 		if err != nil {
@@ -124,19 +114,30 @@ var syncCmd = &cobra.Command{
 			fmt.Println("Connected peers to sync:", clients)
 		}
 
-		// Delete old VPN users from DB if requested
 		if co.EnableDeleteUsers {
 			if err := u.DeleteAllUsers(); err != nil {
 				log.Fatal("error deleting users:", err)
 			}
 		}
 
-		// Insert connected peers into DB
-		for _, vpnUser := range clients {
-			if _, err := u.Insert(vpnUser); err != nil {
-				fmt.Printf("failed to insert VPN user %s: %v\n", vpnUser.Name, err)
-			}
-		}
+// Build active IP list
+var activeIPs []string
+for _, vpnUser := range clients {
+    activeIPs = append(activeIPs, vpnUser.IP)
+    if err := u.InsertOrKeepConnectedTime(vpnUser); err != nil {
+        fmt.Printf("failed to insert VPN user %s: %v\n", vpnUser.Name, err)
+    }
+}
+
+// Remove stale users (only if not doing full delete)
+if !co.EnableDeleteUsers && len(activeIPs) > 0 {
+    if err := u.RemoveUsersNotInList(activeIPs); err != nil {
+        fmt.Println("failed to remove stale users:", err)
+    } else if co.EnableDebug {
+        fmt.Println("Removed any stale users not in current NetBird list")
+    }
+}
+
 
 		fmt.Printf("Synced %d connected peers.\n", len(clients))
 	},
@@ -144,6 +145,5 @@ var syncCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(syncCmd)
-
 	syncCmd.Flags().BoolP("delete", "d", false, "delete existing users from the database before sync")
 }
