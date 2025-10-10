@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -26,7 +27,9 @@ type NetInteface struct {
 type ConfigOptions struct {
 	Mode                  string
 	PcapFile              string
-	NetworkInteface       NetInteface
+	ListenInterface       string      // NEW: interface to capture from
+	SendNetworkInterface  NetInteface // NEW: interface to send from
+	NetworkInteface       NetInteface // Legacy field (keep for compatibility)
 	Clients               []net.IP
 	EnableBroadcast       bool
 	EnableDebug           bool
@@ -35,6 +38,7 @@ type ConfigOptions struct {
 	NetbirdApiConnection  NetbirdApi
 	BroadcastPort         int
 	DiscoveryDelaySeconds int
+	IgnoreRadios          []string
 }
 
 type VpnRouteRow struct {
@@ -67,13 +71,6 @@ type VpnRouteRow struct {
 	UIVersion                   string `json:"ui_version"`
 	UserID                      string `json:"user_id"`
 	Version                     string `json:"version"`
-}
-
-type VpnRoutes struct {
-	Total    int `json:"total"`
-	RowCount int `json:"rowCount"`
-	Current  int `json:"current"`
-	Rows     []VpnRouteRow
 }
 
 // GetNetworkInterfaceByName returns details about a single user provided interface
@@ -156,21 +153,31 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 		log.Fatal("error accessing db: ", err.Error())
 	}
 
-	// Create UDP payload from VRT packet
+	// Serialize packet to bytes
 	buf := gopacket.NewSerializeBuffer()
 	opts := gopacket.SerializeOptions{FixLengths: false, ComputeChecksums: false}
 	if err := p.SerializeTo(buf, opts); err != nil {
-		fmt.Println("Unable to serialize VRT packet into byte stream: ", err)
+		fmt.Println("Unable to serialize VRT packet:", err)
 		return
 	}
 
 	client_ips, err := u.GetUserIpAddresses()
 	if err != nil {
-		fmt.Println("Error retrieving vpn client ips from sqlite db: ", err)
+		fmt.Println("Error retrieving vpn client ips from sqlite db:", err)
 		return
 	}
 
 	for _, clientIp := range client_ips {
+		// Check ignore list
+		for _, ignoreIP := range co.IgnoreRadios {
+			if clientIp == strings.TrimSpace(ignoreIP) {
+				if co.EnableDebug {
+					fmt.Println("[IGNORE] Skipping discovery for", clientIp)
+				}
+				return
+			}
+		}
+
 		go func(ip string) {
 			connectedTime, err := u.GetConnectedTime(ip)
 			delay := time.Duration(co.DiscoveryDelaySeconds) * time.Second
@@ -183,6 +190,8 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 						sendDiscoveryPacketTo(ip, co, buf.Bytes())
 					})
 					return
+				} else if co.EnableDebug {
+					fmt.Printf("[SEND NOW] %s connected %v ago, delay expired\n", ip, elapsed)
 				}
 			}
 			sendDiscoveryPacketTo(ip, co, buf.Bytes())
@@ -191,14 +200,17 @@ func MaybeSendDiscoveryPacket(co ConfigOptions, p vrt.VRT) {
 }
 
 func sendDiscoveryPacketTo(clientIp string, co ConfigOptions, payload []byte) {
-	fmt.Println("Sending Discovery Packet to", clientIp, "on interface", co.NetworkInteface.Name)
+	if co.EnableDebug {
+		fmt.Printf("Sending Discovery Packet to %s via interface %s (%s)\n",
+			clientIp, co.SendNetworkInterface.Name, co.SendNetworkInterface.IPAddress.String())
+	}
 
 	serverAddr, err := net.ResolveUDPAddr("udp", clientIp+":"+strconv.Itoa(co.BroadcastPort))
 	if err != nil {
 		fmt.Println("error with ServerAddr:", err)
 		return
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", co.NetworkInteface.IPAddress.String()+":0")
+	localAddr, err := net.ResolveUDPAddr("udp", co.SendNetworkInterface.IPAddress.String()+":0")
 	if err != nil {
 		fmt.Println("error with LocalAddr:", err)
 		return

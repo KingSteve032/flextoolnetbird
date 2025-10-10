@@ -1,9 +1,18 @@
+# PCAP Location
 PCAPFILE = test.pcap
-INTERFACE = eth0
-BROADCAST = true
-PORT = 4992
-DEBUG = true
-NETBIRD_API_TOKEN: "your_api_token_here"
-NETBIRD_API_URL: "https://api.netbird.io/v1/peers"
-DELETE = true
-DISCOVERY_DELAY_SECONDS=5
+
+# Enable rebroadcast
+BROADCAST=true
+DEBUG=true
+
+# Network interfaces
+LISTEN_INTERFACE=eth0      # LAN side where Flex radios broadcast
+SEND_INTERFACE=ens18       # VPN or NetBird interface to rebroadcast packets
+
+# Discovery control
+DISCOVERY_DELAY_SECONDS=20
+IGNORE_RADIOS=100.85.38.17,100.85.49.99
+
+# NetBird API (for sync)
+NETBIRD_API_TOKEN=your_netbird_token_here
+NETBIRD_API_URL=https://netbird.w4car.org:33073/api/peers
